@@ -115,6 +115,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
   var logDirFailureChannel: LogDirFailureChannel = null
   var logManager: LogManager = null
 
+  // fluency03: replica manager
   var replicaManager: ReplicaManager = null
   var adminManager: AdminManager = null
 
