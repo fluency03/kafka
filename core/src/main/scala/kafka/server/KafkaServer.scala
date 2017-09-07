@@ -107,12 +107,15 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
 
   val brokerState: BrokerState = new BrokerState
 
+  // fluency03: a Proxy class for handling all request, determine the specific handler based on the requestKey
   var apis: KafkaApis = null
   var authorizer: Option[Authorizer] = None
   var socketServer: SocketServer = null
+  // fluency03: the thread pool for handling the request
   var requestHandlerPool: KafkaRequestHandlerPool = null
 
   var logDirFailureChannel: LogDirFailureChannel = null
+  // fluency03: manager of kafka's file storage system, in charge of handling and storing all data of Kafka's topic
   var logManager: LogManager = null
 
   // fluency03: replica manager
@@ -127,14 +130,20 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
 
   var transactionCoordinator: TransactionCoordinator = null
 
+  // fluency03: election of Kafka central controller, leader and distribution of replicas
   var kafkaController: KafkaController = null
 
+  // fluency03: accept periodic assignments
+  // fluency03: replica management and log scheduling, it is a executor of thread pool
+  // fluency03: it deals with the threads with prefix of kafka-scheduler-
   val kafkaScheduler = new KafkaScheduler(config.backgroundThreads)
 
+  // fluency03: listening session expire of zookeeper, create broker info on zk, for other broker and consumer to get info
   var kafkaHealthcheck: KafkaHealthcheck = null
   var metadataCache: MetadataCache = null
   var quotaManagers: QuotaFactory.QuotaManagers = null
 
+  // fluency03: encapsulate the operations (creation, read, write, parse, etc) on ZK nodes;
   var zkUtils: ZkUtils = null
   val correlationId: AtomicInteger = new AtomicInteger(0)
   val brokerMetaPropsFile = "meta.properties"
@@ -231,6 +240,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         metadataCache = new MetadataCache(config.brokerId)
         credentialProvider = new CredentialProvider(config.saslEnabledMechanisms)
 
+        // fluency03: a NIO socket server
         socketServer = new SocketServer(config, metrics, time, credentialProvider)
         socketServer.startup()
 
@@ -245,6 +255,9 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         adminManager = new AdminManager(config, metrics, metadataCache, zkUtils)
 
         /* fluency03: start group coordinator */
+        // fluency03: handles general group membership and offset management
+        // fluency03: each Kafka server instantiates a coordinator which is responsible for a set of groups
+        // fluency03: groups are assigned to coordinators based on their group names
         // Hardcode Time.SYSTEM for now as some Streams tests fail otherwise, it would be good to fix the underlying issue
         groupCoordinator = GroupCoordinator(config, zkUtils, replicaManager, Time.SYSTEM)
         groupCoordinator.startup()
@@ -277,7 +290,8 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
                                                            ConfigType.User -> new UserConfigHandler(quotaManagers, credentialProvider),
                                                            ConfigType.Broker -> new BrokerConfigHandler(config, quotaManagers))
 
-        // fluency03: Create the config manager. start listening to notifications
+        // fluency03: initiates and carries out config changes for all entities defined in ConfigType.
+        // fluency03: ConfigType: Topic, Client, User, Broker, all = Seq(Topic, Client, User, Broker)
         dynamicConfigManager = new DynamicConfigManager(zkUtils, dynamicConfigHandlers)
         dynamicConfigManager.startup()
 
@@ -288,6 +302,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
           else
             endpoint
         }
+        // fluency03: registers the broker in zookeeper to allow other brokers and consumers to detect failures
         kafkaHealthcheck = new KafkaHealthcheck(config.brokerId, listeners, zkUtils, config.rack,
           config.interBrokerProtocolVersion)
         kafkaHealthcheck.startup()
@@ -324,6 +339,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
     new ReplicaManager(config, metrics, time, zkUtils, kafkaScheduler, logManager, isShuttingDown, quotaManagers.follower,
       brokerTopicStats, metadataCache, logDirFailureChannel)
 
+  // fluency03: (1) connect ot zk server; (2) setup general paths
   private def initZk(): ZkUtils = {
     info(s"Connecting to zookeeper on ${config.zkConnect}")
 

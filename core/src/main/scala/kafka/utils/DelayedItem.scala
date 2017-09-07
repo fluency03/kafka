@@ -23,6 +23,8 @@ import org.apache.kafka.common.utils.Time
 
 import scala.math._
 
+// fluency03: defines the object which can be put into a DelayQueue
+// fluency03: https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/DelayQueue.html
 class DelayedItem(delayMs: Long) extends Delayed with Logging {
 
   private val dueMs = Time.SYSTEM.milliseconds + delayMs

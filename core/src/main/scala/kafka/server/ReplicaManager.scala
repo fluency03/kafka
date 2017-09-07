@@ -48,6 +48,8 @@ import org.apache.kafka.common.utils.Time
 import scala.collection.JavaConverters._
 import scala.collection._
 
+// fluency03: ISR: in-sync replicas. https://cwiki.apache.org/confluence/display/KAFKA/Kafka+Replication
+
 /*
  * Result metadata of a log append operation on the log
  */

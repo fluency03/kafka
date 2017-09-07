@@ -643,6 +643,9 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
    * elector
    */
   def startup() = {
+    // fluency03: register Session Expiration Listener
+    // fluency03: register Controller Change Listener
+    // fluency03: elect
     eventManager.put(Startup)
     eventManager.start()
   }
@@ -1657,6 +1660,7 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
     val electString = ZkUtils.controllerZkData(config.brokerId, timestamp)
 
     activeControllerId = getControllerID()
+    // fluency03: if there is already a valid active controller ID, that means one controller has been elected, return
     /*
      * We can get here during the initial startup and the handleDeleted ZK callback. Because of the potential race condition,
      * it's possible that the controller has already been elected when we get here. This check will prevent the following
@@ -1668,10 +1672,14 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
     }
 
     try {
+      // fluency03: Creates an ephemeral znode checking the session owner in the case of conflict.
       val zkCheckedEphemeral = new ZKCheckedEphemeral(ZkUtils.ControllerPath,
                                                       electString,
                                                       controllerContext.zkUtils.zkConnection.getZookeeper,
                                                       controllerContext.zkUtils.isSecure)
+      // fluency03: In the regular case, the znode is created and the create call returns OK.
+      // fluency03: If the call receives a node exists event, then it checks if the session matches.
+      // fluency03: If it does, then it returns OK, and otherwise it fails the operation.
       zkCheckedEphemeral.create()
       info(config.brokerId + " successfully elected as the controller")
       activeControllerId = config.brokerId
