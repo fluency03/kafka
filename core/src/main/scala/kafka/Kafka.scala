@@ -27,6 +27,8 @@ import org.apache.kafka.common.utils.Utils
 
 import scala.collection.JavaConverters._
 
+
+// fluency03: kafka broker's main starter
 object Kafka extends Logging {
 
   def getPropsFromArgs(args: Array[String]): Properties = {
@@ -39,9 +41,11 @@ object Kafka extends Logging {
       CommandLineUtils.printUsageAndDie(optionParser, "USAGE: java [options] %s server.properties [--override property=value]*".format(classOf[KafkaServer].getSimpleName()))
     }
 
+    // fluency03: Read a properties file from the given path
     val props = Utils.loadProps(args(0))
 
     if(args.length > 1) {
+      // TODO (fluency03)
       val options = optionParser.parse(args.slice(1, args.length): _*)
 
       if(options.nonOptionArguments().size() > 0) {
@@ -55,10 +59,13 @@ object Kafka extends Logging {
 
   def main(args: Array[String]): Unit = {
     try {
+      // fluency03: read the kafka server arguments from property files
       val serverProps = getPropsFromArgs(args)
+      // fluency03: create KafkaServerStartable object
       val kafkaServerStartable = KafkaServerStartable.fromProps(serverProps)
 
       // attach shutdown handler to catch control-c
+      // fluency03; add Shutdown Hook
       Runtime.getRuntime().addShutdownHook(new Thread("kafka-shutdown-hook") {
         override def run(): Unit = kafkaServerStartable.shutdown()
       })

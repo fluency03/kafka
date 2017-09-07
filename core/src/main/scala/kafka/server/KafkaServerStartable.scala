@@ -29,6 +29,7 @@ object KafkaServerStartable {
   }
 }
 
+// fluency03: wrapper of KafkaServer
 class KafkaServerStartable(val serverConfig: KafkaConfig, reporters: Seq[KafkaMetricsReporter]) extends Logging {
   private val server = new KafkaServer(serverConfig, kafkaMetricsReporters = reporters)
 
