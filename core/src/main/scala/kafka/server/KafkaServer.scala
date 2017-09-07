@@ -88,6 +88,8 @@ object KafkaServer {
 
 }
 
+// fluency03: the actual starter class, an implementation of Facade Design Pattern
+// fluency03: core entry of kafka broker
 /**
  * Represents the lifecycle of a single Kafka broker. Handles all functionality required
  * to start up and shutdown a single Kafka node.
@@ -175,47 +177,53 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
     try {
       info("starting")
 
+      // fluency03: if kafka is shutting down, it cannot be re-started
       if(isShuttingDown.get)
         throw new IllegalStateException("Kafka server is still shutting down, cannot re-start!")
 
+      // fluency03: if kafka alreay started, it cannot be re-started
       if(startupComplete.get)
         return
 
+      // fluency03: if kafka is not starting up, set the isStartingUp to true, and it is 'canStartup'
+      // fluency03: if it is starting up, it is NOT 'canStartup'
       val canStartup = isStartingUp.compareAndSet(false, true)
       if (canStartup) {
+        // fluency03: set the broker state to 'Starting'
         brokerState.newState(Starting)
 
-        /* start scheduler */
+        /* fluency03: start scheduler */
         kafkaScheduler.startup()
 
-        /* setup zookeeper */
+        /* fluency03: setup zookeeper */
         zkUtils = initZk()
 
-        /* Get or create cluster_id */
+        /* fluency03: Get or create cluster_id */
         _clusterId = getOrGenerateClusterId(zkUtils)
         info(s"Cluster ID = $clusterId")
 
-        /* generate brokerId */
+        /* fluency03: generate brokerId */
         val (brokerId, initialOfflineDirs) = getBrokerIdAndOfflineDirs
         config.brokerId = brokerId
         this.logIdent = "[Kafka Server " + config.brokerId + "], "
 
-        /* create and configure metrics */
+        /* fluency03: create and configure metrics */
         val reporters = config.getConfiguredInstances(KafkaConfig.MetricReporterClassesProp, classOf[MetricsReporter],
             Map[String, AnyRef](KafkaConfig.BrokerIdProp -> (config.brokerId.toString)).asJava)
         reporters.add(new JmxReporter(jmxPrefix))
         val metricConfig = KafkaServer.metricConfig(config)
         metrics = new Metrics(metricConfig, reporters, time, true)
 
-        /* register broker metrics */
+        /* fluency03: register broker metrics */
         _brokerTopicStats = new BrokerTopicStats
 
+        // fluency03: get Quota Manager
         quotaManagers = QuotaFactory.instantiate(config, metrics, time)
         notifyClusterListeners(kafkaMetricsReporters ++ reporters.asScala)
 
         logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size)
 
-        /* start log manager */
+        /* fluency03: start log manager */
         logManager = LogManager(config, initialOfflineDirs, zkUtils, brokerState, kafkaScheduler, time, brokerTopicStats, logDirFailureChannel)
         logManager.startup()
 
@@ -225,17 +233,17 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         socketServer = new SocketServer(config, metrics, time, credentialProvider)
         socketServer.startup()
 
-        /* start replica manager */
+        /* fluency03: start replica manager */
         replicaManager = createReplicaManager(isShuttingDown)
         replicaManager.startup()
 
-        /* start kafka controller */
+        /* fluency03: start kafka controller */
         kafkaController = new KafkaController(config, zkUtils, time, metrics, threadNamePrefix)
         kafkaController.startup()
 
         adminManager = new AdminManager(config, metrics, metadataCache, zkUtils)
 
-        /* start group coordinator */
+        /* fluency03: start group coordinator */
         // Hardcode Time.SYSTEM for now as some Streams tests fail otherwise, it would be good to fix the underlying issue
         groupCoordinator = GroupCoordinator(config, zkUtils, replicaManager, Time.SYSTEM)
         groupCoordinator.startup()
@@ -252,7 +260,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
           authZ
         }
 
-        /* start processing requests */
+        /* fluency03: start processing requests */
         apis = new KafkaApis(socketServer.requestChannel, replicaManager, adminManager, groupCoordinator, transactionCoordinator,
           kafkaController, zkUtils, config.brokerId, config, metadataCache, metrics, authorizer, quotaManagers,
           brokerTopicStats, clusterId, time)
@@ -262,17 +270,17 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
 
         Mx4jLoader.maybeLoad()
 
-        /* start dynamic config manager */
+        /* fluency03: start dynamic config manager */
         dynamicConfigHandlers = Map[String, ConfigHandler](ConfigType.Topic -> new TopicConfigHandler(logManager, config, quotaManagers),
                                                            ConfigType.Client -> new ClientIdConfigHandler(quotaManagers),
                                                            ConfigType.User -> new UserConfigHandler(quotaManagers, credentialProvider),
                                                            ConfigType.Broker -> new BrokerConfigHandler(config, quotaManagers))
 
-        // Create the config manager. start listening to notifications
+        // fluency03: Create the config manager. start listening to notifications
         dynamicConfigManager = new DynamicConfigManager(zkUtils, dynamicConfigHandlers)
         dynamicConfigManager.startup()
 
-        /* tell everyone we are alive */
+        /* fluency03: tell everyone we are alive */
         val listeners = config.advertisedListeners.map { endpoint =>
           if (endpoint.port == 0)
             endpoint.copy(port = socketServer.boundPort(endpoint.listenerName))
@@ -283,11 +291,13 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
           config.interBrokerProtocolVersion)
         kafkaHealthcheck.startup()
 
-        // Now that the broker id is successfully registered via KafkaHealthcheck, checkpoint it
+        // fluency03: Now that the broker id is successfully registered via KafkaHealthcheck, checkpoint it
         checkpointBrokerId(config.brokerId)
 
+        // fluency03: set the broker state as 'RunningAsBroker'
         brokerState.newState(RunningAsBroker)
         shutdownLatch = new CountDownLatch(1)
+        // fluency03: set startupCompete to true, set isStartingUp to false, because it is already started
         startupComplete.set(true)
         isStartingUp.set(false)
         AppInfoParser.registerAppInfo(jmxPrefix, config.brokerId.toString)
