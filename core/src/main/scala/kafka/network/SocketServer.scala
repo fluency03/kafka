@@ -52,6 +52,7 @@ import scala.util.control.{ControlThrowable, NonFatal}
  *   Acceptor has N Processor threads that each have their own selector and read requests from sockets
  *   M Handler threads that handle requests and produce responses back to the processor threads for writing.
  */
+// fluency03: arrange and organize all network components
 class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time, val credentialProvider: CredentialProvider) extends Logging with KafkaMetricsGroup {
 
   private val endpoints = config.listeners.map(l => l.listenerName -> l).toMap
@@ -92,12 +93,14 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
         val securityProtocol = endpoint.securityProtocol
         val processorEndIndex = processorBeginIndex + numProcessorThreads
 
+        // fluency03: create Acceptor and all its related Processor threads based on config endpoints
         for (i <- processorBeginIndex until processorEndIndex)
           processors(i) = newProcessor(i, connectionQuotas, listenerName, securityProtocol, memoryPool)
 
         val acceptor = new Acceptor(endpoint, sendBufferSize, recvBufferSize, brokerId,
           processors.slice(processorBeginIndex, processorEndIndex), connectionQuotas)
         acceptors.put(endpoint, acceptor)
+        // fluency03: create the thread of Accepter and start it
         KafkaThread.nonDaemon(s"kafka-socket-acceptor-$listenerName-$securityProtocol-${endpoint.port}", acceptor).start()
         acceptor.awaitStartup()
 
@@ -256,8 +259,9 @@ private[kafka] abstract class AbstractServerThread(connectionQuotas: ConnectionQ
 }
 
 /**
- * Thread that accepts and configures new connections. There is one of these per endpoint.
+ * fluency03: Thread that accepts and configures new connections. There is one of these per endpoint.
  */
+// fluency03: create a bunch of worker threads; take new connection and allocate new socket to a worker
 private[kafka] class Acceptor(val endPoint: EndPoint,
                               val sendBufferSize: Int,
                               val recvBufferSize: Int,
@@ -266,8 +270,10 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
                               connectionQuotas: ConnectionQuotas) extends AbstractServerThread(connectionQuotas) with KafkaMetricsGroup {
 
   private val nioSelector = NSelector.open()
+  // fluency03: create a server socket to listen for connections on.
   val serverChannel = openServerSocket(endPoint.host, endPoint.port)
 
+  // fluency03: start the several assigned Processors
   this.synchronized {
     processors.foreach { processor =>
       KafkaThread.nonDaemon(s"kafka-network-thread-$brokerId-${endPoint.listenerName}-${endPoint.securityProtocol}-${processor.id}",
@@ -279,6 +285,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
    * Accept loop that checks for new connection attempts
    */
   def run() {
+    // fluency03: use selector of NIO to receive network connection
     serverChannel.register(nioSelector, SelectionKey.OP_ACCEPT)
     startupComplete()
     try {
@@ -294,6 +301,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
                 val key = iter.next
                 iter.remove()
                 if (key.isAcceptable)
+                  // fluency03: main part of run()
                   accept(key, processors(currentProcessor))
                 else
                   throw new IllegalStateException("Unrecognized key state for acceptor thread.")
@@ -353,6 +361,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
     val serverSocketChannel = key.channel().asInstanceOf[ServerSocketChannel]
     val socketChannel = serverSocketChannel.accept()
     try {
+      // fluency03: after setting the configs of newly connected socket, give it to Processor
       connectionQuotas.inc(socketChannel.socket().getInetAddress)
       socketChannel.configureBlocking(false)
       socketChannel.socket().setTcpNoDelay(true)
@@ -382,9 +391,10 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
 }
 
 /**
- * Thread that processes all requests from a single connection. There are N of these running in parallel
- * each of which has its own selector
+ * fluency03: Thread that processes all requests from a single connection. There are N of these running in parallel
+ * fluency03: each of which has its own selector
  */
+// fluency03: worker thread process several socket, take request and allocate to all kinds of handlers, and send back response.
 private[kafka] class Processor(val id: Int,
                                time: Time,
                                maxRequestSize: Int,
@@ -431,6 +441,7 @@ private[kafka] class Processor(val id: Int,
     Map("networkProcessor" -> id.toString)
   )
 
+  // fluency03: every Processor will create its own selector
   private val selector = new KSelector(
     maxRequestSize,
     connectionsMaxIdleMs,
@@ -443,6 +454,7 @@ private[kafka] class Processor(val id: Int,
     ChannelBuilders.serverChannelBuilder(listenerName, securityProtocol, config, credentialProvider.credentialCache),
     memoryPool)
 
+  // fluency03: every connection is having an unique ID
   // Connection ids have the format `localAddr:localPort-remoteAddr:remotePort-index`. The index is a
   // non-negative incrementing value that ensures that even if remotePort is reused after a connection is
   // closed, connection ids are not reused while requests from the closed connection are being processed.
@@ -453,12 +465,19 @@ private[kafka] class Processor(val id: Int,
     while (isRunning) {
       try {
         // setup any new connections that have been queued up
+        // fluency03: get SocketChannel from concurrent queue, add it to its own nio selector, listen to read event;
         configureNewConnections()
         // register any new responses for writing
+        // fluency03: process responses from all finished requests, these responses are obtained from RequestChannek
+        // fluency03: according to the type of request, determine whether delete listening on reading event, add new write event, or close this connection
         processNewResponses()
         poll()
+        // fluency03: process all requests returned from selector, put them into RequestChannel's blocking queue, used for application layergetting more information
+        // fluency03: temporablly delete some read event on these connections
         processCompletedReceives()
+        // fluency03: process all write opetations returned from selector, re-add the write event into connected elector listening
         processCompletedSends()
+        // fluency03: process all disconnected connections
         processDisconnected()
       } catch {
         // We catch all the throwables here to prevent the processor thread from exiting. We do this because
