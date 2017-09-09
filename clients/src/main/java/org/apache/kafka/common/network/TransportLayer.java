@@ -31,7 +31,7 @@ import java.nio.channels.GatheringByteChannel;
 
 import java.security.Principal;
 
-
+// fluency03: two sub-classes: PlanintextTransportLayer and SslTransportLayer
 public interface TransportLayer extends ScatteringByteChannel, GatheringByteChannel {
 
     /**

@@ -29,6 +29,8 @@ import java.util.Objects;
 import org.apache.kafka.common.memory.MemoryPool;
 import org.apache.kafka.common.utils.Utils;
 
+
+// fluency03: include transportLayer and authenticator, complete ssh hand-shake, sasl signing, data sending and receiving
 public class KafkaChannel {
     private final String id;
     private final TransportLayer transportLayer;

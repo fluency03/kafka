@@ -346,6 +346,9 @@ public class Selector implements Selectable, AutoCloseable {
      * @throws IllegalStateException If a send is given for which we have no existing connection or for which there is
      *         already an in-progress send
      */
+    /**
+     * fluency03: Core Method.
+     */
     @Override
     public void poll(long timeout) throws IOException {
         if (timeout < 0)

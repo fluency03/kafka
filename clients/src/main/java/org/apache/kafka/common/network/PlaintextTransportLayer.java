@@ -30,6 +30,8 @@ import java.security.Principal;
 
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 
+
+// fluency03: mainly implemented based on NetworkReceive and NetworkSend
 public class PlaintextTransportLayer implements TransportLayer {
     private final SelectionKey key;
     private final SocketChannel socketChannel;

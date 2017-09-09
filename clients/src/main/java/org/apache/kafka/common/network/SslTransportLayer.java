@@ -42,6 +42,7 @@ import org.slf4j.LoggerFactory;
 /*
  * Transport layer for SSL communication
  */
+// fluency03: implemented mainly based on SocketChannel, ByteBuffers and SSLEngine for encrypted data sending and receiving
 public class SslTransportLayer implements TransportLayer {
     private static final Logger log = LoggerFactory.getLogger(SslTransportLayer.class);
     private final String channelId;
