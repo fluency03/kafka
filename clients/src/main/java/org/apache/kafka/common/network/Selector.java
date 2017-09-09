@@ -205,6 +205,8 @@ public class Selector implements Selectable, AutoCloseable {
         if (receiveBufferSize != Selectable.USE_DEFAULT_BUFFER_SIZE)
             socket.setReceiveBufferSize(receiveBufferSize);
         socket.setTcpNoDelay(true);
+
+        // fluency03: use the NIO SocketChannel to connect to certain address
         boolean connected;
         try {
             connected = socketChannel.connect(address);
@@ -215,7 +217,11 @@ public class Selector implements Selectable, AutoCloseable {
             socketChannel.close();
             throw e;
         }
+
+        // fluency03: register the SocketChannel to nio selector
         SelectionKey key = socketChannel.register(nioSelector, SelectionKey.OP_CONNECT);
+
+        // fluency03: create a KafkaChannel in charge of actual data receiving and sending
         KafkaChannel channel;
         try {
             channel = channelBuilder.buildChannel(id, key, maxReceiveSize, memoryPool);
@@ -255,7 +261,12 @@ public class Selector implements Selectable, AutoCloseable {
         if (this.closingChannels.containsKey(id))
             throw new IllegalStateException("There is already a connection for id " + id + " that is still being closed");
 
+        // fluency03: register the nioSelector with an existing socketChannel, add its READ event to the selector's listening queue
+        // fluency03: this socketChannel normally is the client connection obtained by the server
         SelectionKey key = socketChannel.register(nioSelector, SelectionKey.OP_READ);
+
+        // fluency03: meanwhile, create a KafkaChannel in charge of the actual data receiving and sending
+        // fluency03: the id here is same as the ConnectionId defined within Processor at SocketServer.scala
         KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize, memoryPool);
         key.attach(channel);
         this.channels.put(id, channel);

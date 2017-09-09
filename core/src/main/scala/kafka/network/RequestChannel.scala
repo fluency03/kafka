@@ -198,7 +198,7 @@ object RequestChannel extends Logging {
   case object CloseConnectionAction extends ResponseAction
 }
 
-// fluency03: save all complete request obtained from network, and all response to be sent
+// fluency03: save all completed request obtained from network, and all response to be sent
 // fluency03: normally, RequestHandler will periodically get request from RequestChannel, and store response at RequestChannel
 class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMetricsGroup {
   private var responseListeners: List[(Int) => Unit] = Nil
