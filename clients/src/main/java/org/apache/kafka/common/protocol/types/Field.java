@@ -19,6 +19,7 @@ package org.apache.kafka.common.protocol.types;
 /**
  * A field in a schema
  */
+// fluency03: a filed of which Schema consists of
 public class Field {
 
     public static final Object NO_DEFAULT = new Object();

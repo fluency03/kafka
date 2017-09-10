@@ -23,6 +23,7 @@ import java.util.Map;
 /**
  * The schema for a compound record definition
  */
+// fluency03: extends of Type, has member of an array of Field
 public class Schema extends Type {
 
     private final Field[] fields;

@@ -52,6 +52,11 @@ public class AbstractConfig {
 
     private final ConfigDef definition;
 
+    /**
+     * fluency03: originals represents the original values passed in by the user
+     * fluency03: definition represents all config
+     * fluency03: by calling definition.parse(this.originals), all config are updated based on user's passed values
+     */
     @SuppressWarnings("unchecked")
     public AbstractConfig(ConfigDef definition, Map<?, ?> originals, boolean doLog) {
         /* check that all the keys are really strings */

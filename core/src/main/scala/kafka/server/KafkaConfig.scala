@@ -38,6 +38,7 @@ import org.apache.kafka.common.record.TimestampType
 import scala.collection.JavaConverters._
 import scala.collection.Map
 
+// fluency03: define default values of all configurations
 object Defaults {
   /** ********* Zookeeper Configuration ***********/
   val ZkSessionTimeoutMs = 6000
@@ -215,6 +216,7 @@ object Defaults {
   val SaslKerberosPrincipalToLocalRules = SaslConfigs.DEFAULT_SASL_KERBEROS_PRINCIPAL_TO_LOCAL_RULES
 }
 
+// fluency03: define all names of the configurations
 object KafkaConfig {
 
   private val LogConfigPrefix = "log."

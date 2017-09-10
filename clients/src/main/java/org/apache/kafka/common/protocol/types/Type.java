@@ -27,6 +27,11 @@ import java.nio.ByteBuffer;
 /**
  * A serializable type
  */
+
+/**
+ * fluency03: mainly defines the serialization/deserialization between ByteBuffer and all kinds of Object
+ * fluency03: defines all kinds of implementation class (INT8, INT16, INT32, INT64, STRING, BYTES, NULLABLE_BYTES, etc) for Type
+ */
 public abstract class Type {
 
     /**

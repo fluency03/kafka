@@ -24,6 +24,11 @@ import java.util.Arrays;
 /**
  * A record that can be serialized and deserialized according to a pre-defined schema
  */
+/**
+ * fluency03: include a Schema object and an array of Objects; the array is used to store all field values described by Schema
+ * fluency03: Schema is a template, then, Struct is the particular version of this template, add data into the template
+ * fluency03: construct the actual request object, and be able to transfer this object between ByteBuffer
+ */
 public class Struct {
     private final Schema schema;
     private final Object[] values;

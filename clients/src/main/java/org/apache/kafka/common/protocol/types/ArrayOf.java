@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 /**
  * Represents a type for an array of a particular type
  */
+// fluency03: extends of Type, array as Type
 public class ArrayOf extends Type {
 
     private final Type type;

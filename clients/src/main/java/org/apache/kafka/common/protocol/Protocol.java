@@ -40,6 +40,8 @@ import static org.apache.kafka.common.protocol.types.Type.RECORDS;
 import static org.apache.kafka.common.protocol.types.Type.STRING;
 import static org.apache.kafka.common.protocol.types.Type.NULLABLE_STRING;
 
+
+// fluency03: define all kinds of Schema
 public class Protocol {
 
     public static final Schema REQUEST_HEADER = new Schema(
