@@ -105,7 +105,7 @@ public abstract class AbstractRequest extends AbstractRequestResponse {
     public abstract AbstractResponse getErrorResponse(int throttleTimeMs, Throwable e);
 
     /**
-     * Factory method for getting a request object based on ApiKey ID and a version
+     * fluency03: Factory method for getting a request object based on ApiKey ID and a version
      */
     public static AbstractRequest parseRequest(ApiKeys apiKey, short apiVersion, Struct struct) {
         switch (apiKey) {

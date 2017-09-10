@@ -132,6 +132,9 @@ public class ProduceRequest extends AbstractRequest {
         return result;
     }
 
+    /**
+     * fluency03: deserialize the ProduceRequest object from ByteBuffer based on the Schema defined at Struct
+     */
     public ProduceRequest(Struct struct, short version) {
         super(version);
         partitionRecords = new HashMap<>();

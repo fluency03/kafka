@@ -20,6 +20,7 @@ import org.apache.kafka.common.protocol.types.Struct;
 
 import java.nio.ByteBuffer;
 
+// fluency03: every Request and Response has RequestHeader(ResponseHeader) and the actual body
 public abstract class AbstractRequestResponse {
     /**
      * Visible for testing.
