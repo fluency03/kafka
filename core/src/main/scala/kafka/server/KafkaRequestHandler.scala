@@ -29,6 +29,7 @@ import org.apache.kafka.common.utils.{KafkaThread, Time}
 /**
  * A thread that answers kafka requests.
  */
+// fluency03: call the RequestChannel::receiveRequest in a loop, it will poll all new request and give them to KafkaApis to handle
 class KafkaRequestHandler(id: Int,
                           brokerId: Int,
                           val aggregateIdleMeter: Meter,
@@ -83,6 +84,7 @@ class KafkaRequestHandler(id: Int,
 
 }
 
+// fluency03: thread pool, every thread in it is running a KafkaRequestHandlers
 class KafkaRequestHandlerPool(val brokerId: Int,
                               val requestChannel: RequestChannel,
                               val apis: KafkaApis,

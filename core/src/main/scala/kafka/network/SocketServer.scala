@@ -53,10 +53,10 @@ import scala.util.control.{ControlThrowable, NonFatal}
  *   M Handler threads that handle requests and produce responses back to the processor threads for writing.
  */
 /**
-  * fluency03: arrange and organize all network components
-  * fluency03: Socket Server
-  * fluency03: (1) Acceptor; (2) Processor; (3) RequestChannel; (4) ConnectionQuotas
-  */
+ * fluency03: arrange and organize all network components, in charge of network connections, sending and receiving of data
+ * fluency03: RequestChannel is in charge of sending request to application layer and sending out response from application layer
+ * fluency03: (1) Acceptor; (2) Processor; (3) RequestChannel; (4) ConnectionQuotas
+ */
 class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time, val credentialProvider: CredentialProvider) extends Logging with KafkaMetricsGroup {
 
   // fluency03: map all listener names from listeners to the endpoint
