@@ -61,6 +61,7 @@ class ControllerChannelManager(controllerContext: ControllerContext, config: Kaf
     }
   )
 
+  // fluency03: create connection to every broker node, every connection is a new thread
   controllerContext.liveBrokers.foreach(addNewBroker)
 
   def startup() = {
@@ -104,10 +105,12 @@ class ControllerChannelManager(controllerContext: ControllerContext, config: Kaf
     }
   }
 
+  // fluency03: create a new connection to the broker node
   private def addNewBroker(broker: Broker) {
     val messageQueue = new LinkedBlockingQueue[QueueItem]
     debug("Controller %d trying to connect to broker %d".format(config.brokerId, broker.id))
     val brokerNode = broker.getNode(config.interBrokerListenerName)
+    // fluency03: use NetworkClient to connect to broker node, use selector to handle network IO
     val networkClient = {
       val channelBuilder = ChannelBuilders.clientChannelBuilder(
         config.interBrokerSecurityProtocol,
@@ -147,6 +150,7 @@ class ControllerChannelManager(controllerContext: ControllerContext, config: Kaf
       case Some(name) => "%s:Controller-%d-to-broker-%d-send-thread".format(name, config.brokerId, broker.id)
     }
 
+    // fluency03: every connection is a new thread
     val requestThread = new RequestSendThread(config.brokerId, controllerContext, messageQueue, networkClient,
       brokerNode, config, time, threadName)
     requestThread.setDaemon(false)
@@ -191,6 +195,11 @@ class ControllerChannelManager(controllerContext: ControllerContext, config: Kaf
 case class QueueItem(apiKey: ApiKeys, request: AbstractRequest.Builder[_ <: AbstractRequest],
                      callback: AbstractResponse => Unit)
 
+/**
+ * fluency03: the request to be sent will be added to the blocking queue of QueueItem
+ * fluency03: then, within doWork(), QueueItem will be continuously taken out from the queue
+ * fluency03: by calling NetworkClientUtils.sendAndReceive, the item will be directly sent until the clientResponse is returned
+ */
 class RequestSendThread(val controllerId: Int,
                         val controllerContext: ControllerContext,
                         val queue: BlockingQueue[QueueItem],
