@@ -40,7 +40,40 @@ import scala.collection._
  * 7. NonExistentReplica: If a replica is deleted successfully, it is moved to this state. Valid previous state is
  *                        ReplicaDeletionSuccessful
  */
-// fluency03: NewReplica, OnlineReplica, OfflineReplica, ReplicaDeletionStarted, ReplicaDeletionSuccessful, ReplicaDeletionIneligible, NonExistentReplica
+
+/**
+ * fluency03: NewReplica, OnlineReplica, OfflineReplica, ReplicaDeletionStarted, ReplicaDeletionSuccessful, ReplicaDeletionIneligible, NonExistentReplica
+ *
+ *                                           ----------------------       send LeaderAndIsrRequest to brokers
+ *  ---------------------------------------> | NonExistentReplica | ---------------------------------------->
+ *  |                                        ----------------------                                         |
+ *  |                                                                                                       |
+ *  |     ------------------                         broker down                                     --------------
+ *  |     | OfflineReplica | <---------------------------------------------------------------------- | NewReplica |
+ *  |     ------------------                                                                         --------------
+ *  |       |      |      |                                                                                 |
+ *  |       |      |      |    broker restore                                                               |
+ *  |       |      |        ----------------------->                                                        |
+ *  |       |      |                               |                                                        |
+ *  |       |      |                        -----------------                                               |
+ *  |       |      <----------------------- | OnlineReplica | <----------------------------------------------
+ *  |       |        broker down            -----------------   add replica Id into controllerContext.partitionReplicaAssignment
+ *  |       |
+ *  |       |       delete starts
+ *  |       ------------------------------------------->
+ *  |                                                  |
+ *  |                                      --------------------------
+ *  |                                      | ReplicaDeletionStarted |
+ *  |                                      --------------------------
+ *  |                          delete ok         |            |   failed to delete replica
+ *  |                  <--------------------------            ---------------------->
+ *  |                  |                                                            |
+ *  |    -----------------------------                                -----------------------------
+ *  --- | ReplicaDeletionSuccessful |                                | ReplicaDeletionIneligible |
+ *      -----------------------------                                -----------------------------
+ *
+ */
+
 class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
   private val controllerId = controller.config.brokerId
@@ -60,6 +93,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    */
   def startup() {
     initializeReplicaState()
+    // fluency03: process all replicas which can be transfer to OnlineReplica
     handleStateChanges(controllerContext.allLiveReplicas(), OnlineReplica)
 
     info("Started replica state machine with initial state -> " + replicaState.toString())
@@ -140,8 +174,11 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
       val replicaAssignment = controllerContext.partitionReplicaAssignment(topicAndPartition)
       assertValidTransition(partitionAndReplica, targetState)
       targetState match {
+          // fluency03: NonExistentReplica --> NewReplica
         case NewReplica =>
           // start replica as a follower to the current leader for its partition
+          // fluency03: send LeaderAndIsr request with current leader and isr to the new replica
+          // fluency03: UpdateMetadata request for the partition to every live broker
           val leaderIsrAndControllerEpochOpt = ReplicationUtils.getLeaderIsrAndEpochForPartition(zkUtils, topic, partition)
           leaderIsrAndControllerEpochOpt match {
             case Some(leaderIsrAndControllerEpoch) =>
@@ -157,6 +194,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
           stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
                                     .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState,
                                             targetState))
+        // fluency03: OfflineReplica -> ReplicaDeletionStarted
         case ReplicaDeletionStarted =>
           replicaState.put(partitionAndReplica, ReplicaDeletionStarted)
           // send stop replica command
@@ -164,16 +202,19 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
             callbacks.stopReplicaResponseCallback)
           stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
             .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState, targetState))
+        // fluency03: ReplicaDeletionStarted -> ReplicaDeletionIneligible
         case ReplicaDeletionIneligible =>
           replicaState.put(partitionAndReplica, ReplicaDeletionIneligible)
           stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
             .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState, targetState))
+        // fluency03: ReplicaDeletionStarted -> ReplicaDeletionSuccessful
         case ReplicaDeletionSuccessful =>
           replicaState.put(partitionAndReplica, ReplicaDeletionSuccessful)
           stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
             .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState, targetState))
+        // fluency03: ReplicaDeletionSuccessful -> NonExistentReplica
         case NonExistentReplica =>
-          // remove this replica from the assigned replicas list for its partition
+          // fluency03: remove this replica from the assigned replicas list for its partition
           val currentAssignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
           controllerContext.partitionReplicaAssignment.put(topicAndPartition, currentAssignedReplicas.filterNot(_ == replicaId))
           replicaState.remove(partitionAndReplica)
@@ -181,18 +222,23 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
             .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState, targetState))
         case OnlineReplica =>
           replicaState(partitionAndReplica) match {
+            // fluency03: NewReplica -> OnlineReplica
             case NewReplica =>
               // add this replica to the assigned replicas list for its partition
               val currentAssignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
+              // fluency03: add the new replica to the assigned replica list if needed
               if(!currentAssignedReplicas.contains(replicaId))
                 controllerContext.partitionReplicaAssignment.put(topicAndPartition, currentAssignedReplicas :+ replicaId)
               stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
                                         .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState,
                                                 targetState))
+            // fluency03: OnlineReplica,OfflineReplica -> OnlineReplica
             case _ =>
               // check if the leader for this partition ever existed
               controllerContext.partitionLeadershipInfo.get(topicAndPartition) match {
                 case Some(leaderIsrAndControllerEpoch) =>
+                  // fluency03: send LeaderAndIsr request with current leader and isr to the new replica
+                  // fluency03: UpdateMetadata request for the partition to every live broker
                   brokerRequestBatch.addLeaderAndIsrRequestForBrokers(List(replicaId), topic, partition, leaderIsrAndControllerEpoch,
                     replicaAssignment)
                   replicaState.put(partitionAndReplica, OnlineReplica)
@@ -203,6 +249,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
               }
           }
           replicaState.put(partitionAndReplica, OnlineReplica)
+        // fluency03: NewReplica,OnlineReplica,OfflineReplica,ReplicaDeletionIneligible -> OfflineReplica
         case OfflineReplica =>
           // send stop replica command to the replica so that it stops fetching from the leader
           brokerRequestBatch.addStopReplicaRequestForBrokers(List(replicaId), topic, partition, deletePartition = false)
@@ -284,8 +331,10 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
       val partition = topicPartition.partition
       assignedReplicas.foreach { replicaId =>
         val partitionAndReplica = PartitionAndReplica(topic, partition, replicaId)
+        // fluency03: if the broker of this replica is live, then set this replica as OnlineReplica
         if (controllerContext.isReplicaOnline(replicaId, topicPartition))
           replicaState.put(partitionAndReplica, OnlineReplica)
+        // fluency03: if the broker of this replica is not live, then set this replica as ReplicaDeletionIneligible
         else
           // mark replicas on dead brokers as failed for topic deletion, if they belong to a topic to be deleted.
           // This is required during controller failover since during controller failover a broker can go down,

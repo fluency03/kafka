@@ -37,6 +37,7 @@ import scala.collection._
  * 4. OfflinePartition    : If, after successful leader election, the leader for partition dies, then the partition
  *                          moves to the OfflinePartition state. Valid previous states are NewPartition/OnlinePartition
  */
+
 /**
  * fluency03: NonExistentPartition, NewPartition, OnlinePartition, OfflinePartition
  *
