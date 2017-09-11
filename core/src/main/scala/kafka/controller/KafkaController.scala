@@ -276,10 +276,11 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
     // fluency03: Epoch can be useful for tracking the generation and validity of a controller decision
     // fluency03: Epoch is very similar to the concept 'term' in Raft protocol
     readControllerEpochFromZookeeper()
+    // fluency03: update controller epoch on ZK
     incrementControllerEpoch()
     LogDirUtils.deleteLogDirEvents(zkUtils)
 
-    // before reading source of truth from zookeeper, register the listeners to get broker/topic callbacks
+    // fluency03: before reading source of truth from zookeeper, register the listeners to get broker/topic callbacks
     registerPartitionReassignmentListener()
     registerIsrChangeNotificationListener()
     registerPreferredReplicaElectionListener()
@@ -291,6 +292,7 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
     /**
      * fluency03: update controllerContext (liveBrokers, allTopics, partitionReplicaAssignment, partitionLeadershipInfo, shuttingDownBrokerIds)
      * fluency03: update the leader and isr cache for all existing partitions from Zookeeper
+     * fluency03: mainly get info from ZK like broker, topic, parition, isr, partition leader, replicas
      * fluency03: start the channel manager
      * fluency03: initializePartitionReassignment
      */
@@ -304,6 +306,7 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
     // partitionStateMachine.startup().
     sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
 
+    // fluency03: start ReplicaStateMachine and PartitionStateMachine
     replicaStateMachine.startup()
     partitionStateMachine.startup()
 
@@ -432,11 +435,15 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
    */
   def onBrokerFailure(deadBrokers: Seq[Int]) {
     info("Broker failure callback for %s".format(deadBrokers.mkString(",")))
+    // fluency03: remove dead brokers from the replicas on offline directory
     deadBrokers.foreach(controllerContext.replicasOnOfflineDirs.remove)
+    // fluency03: remove dead brokers from shutting down brokers
     val deadBrokersThatWereShuttingDown =
       deadBrokers.filter(id => controllerContext.shuttingDownBrokerIds.remove(id))
     info("Removed %s from list of shutting down brokers.".format(deadBrokersThatWereShuttingDown))
+    // fluency03: obtain all replicas of dead brokers
     val allReplicasOnDeadBrokers = controllerContext.replicasOnBrokers(deadBrokers.toSet)
+    // fluency03: set all replicas of dead brokers to offline
     onReplicasBecomeOffline(allReplicasOnDeadBrokers)
   }
 
@@ -455,15 +462,16 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
     val (newOfflineReplicasForDeletion, newOfflineReplicasNotForDeletion) =
       newOfflineReplicas.partition(p => topicDeletionManager.isTopicQueuedUpForDeletion(p.topic))
 
+    // fluency03: get all TopicAndPartitons of which the leader is not online
     val partitionsWithoutLeader = controllerContext.partitionLeadershipInfo.filter(partitionAndLeader =>
       !controllerContext.isReplicaOnline(partitionAndLeader._2.leaderAndIsr.leader, partitionAndLeader._1) &&
         !topicDeletionManager.isTopicQueuedUpForDeletion(partitionAndLeader._1.topic)).keySet
 
-    // trigger OfflinePartition state for all partitions whose current leader is one amongst the newOfflineReplicas
+    // fluency03: trigger OfflinePartition state for all partitions whose current leader is one amongst the newOfflineReplicas
     partitionStateMachine.handleStateChanges(partitionsWithoutLeader, OfflinePartition)
-    // trigger OnlinePartition state changes for offline or new partitions
+    // fluency03: trigger OnlinePartition state changes for offline or new partitions
     partitionStateMachine.triggerOnlinePartitionStateChange()
-    // trigger OfflineReplica state change for those newly offline replicas
+    // fluency03: trigger OfflineReplica state change for those newly offline replicas
     replicaStateMachine.handleStateChanges(newOfflineReplicasNotForDeletion, OfflineReplica)
 
     // fail deletion of topics that affected by the offline replicas
@@ -1220,12 +1228,15 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
       if (!isActive) return
       // Read the current broker list from ZK again instead of using currentBrokerList to increase
       // the odds of processing recent broker changes in a single ControllerEvent (KAFKA-5502).
+      // fluency03: get current broker list from ZK
       val curBrokers = zkUtils.getAllBrokersInCluster().toSet
       val curBrokerIds = curBrokers.map(_.id)
       val liveOrShuttingDownBrokerIds = controllerContext.liveOrShuttingDownBrokerIds
       val newBrokerIds = curBrokerIds -- liveOrShuttingDownBrokerIds
+      // fluency03: get currently dead broker ids
       val deadBrokerIds = liveOrShuttingDownBrokerIds -- curBrokerIds
       val newBrokers = curBrokers.filter(broker => newBrokerIds(broker.id))
+      // fluency03: update liveBrokers of KafkaControllerContext
       controllerContext.liveBrokers = curBrokers
       val newBrokerIdsSorted = newBrokerIds.toSeq.sorted
       val deadBrokerIdsSorted = deadBrokerIds.toSeq.sorted
@@ -1233,9 +1244,11 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
       info("Newly added brokers: %s, deleted brokers: %s, all live brokers: %s"
         .format(newBrokerIdsSorted.mkString(","), deadBrokerIdsSorted.mkString(","), liveBrokerIdsSorted.mkString(",")))
       newBrokers.foreach(controllerContext.controllerChannelManager.addBroker)
+      // fluency03: remove all dead brokers from the controllerChannelManager of KafkaControllerContext
       deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
       if (newBrokerIds.nonEmpty)
         onBrokerStartup(newBrokerIdsSorted)
+      // fluency03: callback onBrokerFailure
       if (deadBrokerIds.nonEmpty)
         onBrokerFailure(deadBrokerIdsSorted)
     }
@@ -1586,7 +1599,8 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
     def state = ControllerState.ControllerChange
 
     override def process(): Unit = {
-      // fluency03: register the callback for zk connection, to handle the SessionExpiration;
+      // fluency03: register the callback for zk connection, to handle the SessionExpiration
+      // fluency03: after SessionExpiration, new session will be built, and controller will do reelection
       registerSessionExpirationListener()
       // fluency03: register the callback to handle controller change
       registerControllerChangeListener()
