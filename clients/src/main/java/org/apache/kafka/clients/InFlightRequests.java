@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The set of requests which have been sent or are being sent but haven't yet received a response
+ * fluency03: The set of requests which have been sent or are being sent but haven't yet received a response
  */
 final class InFlightRequests {
 
@@ -88,6 +88,10 @@ final class InFlightRequests {
      *
      * @param node Node in question
      * @return true iff we have no requests still being sent to the given node
+     */
+    /**
+     * fluency03: determine whether the request can be sent through NetworkClient
+     * fluency03: for request sent via NetworkClient, if previously sent request are not completed via bottom layer socket, new request is not allowed
      */
     public boolean canSendMore(String node) {
         Deque<NetworkClient.InFlightRequest> queue = requests.get(node);

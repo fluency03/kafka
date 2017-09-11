@@ -21,14 +21,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * The state of our connection to each node in the cluster.
- * 
+ * fluency03: The state of our connection to each node in the cluster.
+ * fluency03: there is a time limit between two connections on same node, i.e., backoff connection is used (reconnectBackoffMs)
  */
 final class ClusterConnectionStates {
     private final long reconnectBackoffInitMs;
     private final long reconnectBackoffMaxMs;
     private final static int RECONNECT_BACKOFF_EXP_BASE = 2;
     private final double reconnectBackoffMaxExp;
+    // fluency03: state: DISCONNECTED, CONNECTING, CHECKING_API_VERSIONS, READY
     private final Map<String, NodeConnectionState> nodeState;
 
     public ClusterConnectionStates(long reconnectBackoffMs, long reconnectBackoffMaxMs) {

@@ -52,10 +52,15 @@ import java.util.Map;
 import java.util.Random;
 
 /**
- * A network client for asynchronous request/response network i/o. This is an internal class used to implement the
- * user-facing producer and consumer clients.
+ * fluency03: A network client for asynchronous request/response network i/o. This is an internal class used to implement the
+ * fluency03: user-facing producer and consumer clients.
  * <p>
  * This class is not thread-safe!
+ */
+
+/**
+ * fluency03: 1. kafka implemented java version of producer and consumer, their network connection, request sending are realized using NetworkClient
+ * fluency03: 2. communication between KafkaController and other brokers is using NetworkClient
  */
 public class NetworkClient implements KafkaClient {
 
@@ -436,6 +441,11 @@ public class NetworkClient implements KafkaClient {
             return responses;
         }
 
+        /**
+         * fluency03: call selector.poll to process socket read/write events
+         * fluency03: after calling selector.poll, the following stuff will be put into the queue of selector:
+         * fluency03: all completed sends, all completed receives, all disconnected connections, all established connections, etc.
+         */
         long metadataTimeout = metadataUpdater.maybeUpdate(now);
         try {
             this.selector.poll(Utils.min(timeout, metadataTimeout, requestTimeoutMs));
