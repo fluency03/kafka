@@ -40,6 +40,7 @@ import scala.collection._
  * 7. NonExistentReplica: If a replica is deleted successfully, it is moved to this state. Valid previous state is
  *                        ReplicaDeletionSuccessful
  */
+// fluency03: NewReplica, OnlineReplica, OfflineReplica, ReplicaDeletionStarted, ReplicaDeletionSuccessful, ReplicaDeletionIneligible, NonExistentReplica
 class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
   private val controllerId = controller.config.brokerId

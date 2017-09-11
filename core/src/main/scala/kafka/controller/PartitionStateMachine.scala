@@ -37,6 +37,28 @@ import scala.collection._
  * 4. OfflinePartition    : If, after successful leader election, the leader for partition dies, then the partition
  *                          moves to the OfflinePartition state. Valid previous states are NewPartition/OnlinePartition
  */
+/**
+ * fluency03: NonExistentPartition, NewPartition, OnlinePartition, OfflinePartition
+ *
+ *                                          ------------------------       replica assigned
+ *                 -----------------------> | NonExistentPartition | ------------------------>
+ *  <-------       |                         ------------------------                        |
+ *  |      |       |                                                                         |
+ *  |    --------------------                                                         ----------------
+ *  |    | OfflinePartition | <------------------------------------------------------ | NewPartition |
+ *  |    --------------------                                                         ----------------
+ *  |      |       |     |                                                                   |
+ *  ------->       |     |    leader re-elect                                                |
+ *                 |     ------------------------->                                          | leader elected
+ *                 |                              |                                          |
+ *                 |                       -------------------                               |
+ *                 <---------------------- | OnlinePartition | <------------------------------
+ *                  leader dies            -------------------
+ *                                             |         |
+ *                                             ---------->
+ *                                            leader re-elect
+ */
+
 class PartitionStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
   private val controllerId = controller.config.brokerId
@@ -71,8 +93,8 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
   }
 
   /**
-   * This API invokes the OnlinePartition state change on all partitions in either the NewPartition or OfflinePartition
-   * state. This is called on a successful controller election and on broker changes
+   * fluency03: This API invokes the OnlinePartition state change on all partitions in either the NewPartition or OfflinePartition
+   * fluency03: state. This is called on a successful controller election and on broker changes
    */
   def triggerOnlinePartitionStateChange() {
     try {
@@ -148,19 +170,30 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
     try {
       assertValidTransition(topicAndPartition, targetState)
       targetState match {
+        // fluency03: NonExistentPartition -> NewPartition
         case NewPartition =>
+          // fluency03: load assigned replicas from ZK to controller cache
           partitionState.put(topicAndPartition, NewPartition)
           val assignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition).mkString(",")
           stateChangeLogger.trace("Controller %d epoch %d changed partition %s state from %s to %s with assigned replicas %s"
                                     .format(controllerId, controller.epoch, topicAndPartition, currState, targetState,
                                             assignedReplicas))
           // post: partition has been assigned replicas
+        // fluency03: NewPartition,sOnlinePartition,OfflinePartition -> OnlinePartition
         case OnlinePartition =>
           partitionState(topicAndPartition) match {
             case NewPartition =>
               // initialize leader and isr path for new partition
+              // fluency03: assign first live replica as the leader and all live replicas as the isr
+              // fluency03: write leader and isr to ZK for this partition
+              // fluency03: send LeaderAndIsr request to every live replica
+              // fluency03: UpdateMetadata request to every live broker
               initializeLeaderAndIsrForPartition(topicAndPartition)
             case OfflinePartition =>
+              // fluency03: select new leader and isr for this partition and a set of replicas to receive the LeaderAndIsr request
+              // fluency03: write leader and isr to ZK
+              // fluency03: for this partition, send LeaderAndIsr request to every receiving replica
+              // fluency03: UpdateMetadata request to every live broker
               electLeaderForPartition(topic, partition, leaderSelector)
             case OnlinePartition => // invoked when the leader needs to be re-elected
               electLeaderForPartition(topic, partition, leaderSelector)
@@ -171,13 +204,17 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
           stateChangeLogger.trace("Controller %d epoch %d changed partition %s from %s to %s with leader %d"
                                     .format(controllerId, controller.epoch, topicAndPartition, currState, targetState, leader))
            // post: partition has a leader
+        // fluency03: NewPartition,OnlinePartition,OfflinePartition -> OfflinePartition
         case OfflinePartition =>
+          // fluency03: nothing other than marking partition state as Offline
           // should be called when the leader for a partition is no longer alive
           stateChangeLogger.trace("Controller %d epoch %d changed partition %s state from %s to %s"
                                     .format(controllerId, controller.epoch, topicAndPartition, currState, targetState))
           partitionState.put(topicAndPartition, OfflinePartition)
           // post: partition has no alive leader
+        // fluency03: OfflinePartition -> NonExistentPartition
         case NonExistentPartition =>
+          // fluency03: nothing other than marking the partition state as NonExistentPartition
           stateChangeLogger.trace("Controller %d epoch %d changed partition %s state from %s to %s"
                                     .format(controllerId, controller.epoch, topicAndPartition, currState, targetState))
           partitionState.put(topicAndPartition, NonExistentPartition)
@@ -196,12 +233,12 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
    */
   private def initializePartitionState() {
     for (topicPartition <- controllerContext.partitionReplicaAssignment.keys) {
-      // check if leader and isr path exists for partition. If not, then it is in NEW state
+      // fluency03: check if leader and isr path exists for partition. If not, then it is in NEW state
       controllerContext.partitionLeadershipInfo.get(topicPartition) match {
         case Some(currentLeaderIsrAndEpoch) =>
-          // else, check if the leader for partition is alive. If yes, it is in Online state, else it is in Offline state
+          // fluency03: else, check if the leader for partition is alive. If yes, it is in Online state, else it is in Offline state
           if (controllerContext.isReplicaOnline(currentLeaderIsrAndEpoch.leaderAndIsr.leader, topicPartition))
-            // leader is alive
+            // fluency03: leader is alive
             partitionState.put(topicPartition, OnlinePartition)
           else
             partitionState.put(topicPartition, OfflinePartition)
