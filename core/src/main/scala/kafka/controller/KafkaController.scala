@@ -40,6 +40,7 @@ import org.apache.zookeeper.Watcher.Event.KeeperState
 import scala.collection._
 import scala.util.Try
 
+// fluency03: controller's context object holds cache objects for current topics, live brokers and leaders for all existing partitions
 class ControllerContext(val zkUtils: ZkUtils) {
   val stats = new ControllerStats
 
@@ -154,6 +155,7 @@ object KafkaController extends Logging {
   }
 }
 
+// fluency03: Topic creation, Partition leader election, Partition increasing, Partition Reassigned, Preferred Replica Election, Topic deletion, etc...
 class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, metrics: Metrics, threadNamePrefix: Option[String] = None) extends Logging with KafkaMetricsGroup {
   this.logIdent = "[Controller " + config.brokerId + "]: "
   private val stateChangeLogger = KafkaController.stateChangeLogger
@@ -271,6 +273,8 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
    */
   def onControllerFailover() {
     info("Broker %d starting become controller state transition".format(config.brokerId))
+    // fluency03: Epoch can be useful for tracking the generation and validity of a controller decision
+    // fluency03: Epoch is very similar to the concept 'term' in Raft protocol
     readControllerEpochFromZookeeper()
     incrementControllerEpoch()
     LogDirUtils.deleteLogDirEvents(zkUtils)
@@ -284,6 +288,12 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
     registerBrokerChangeListener()
     registerLogDirEventNotificationListener()
 
+    /**
+     * fluency03: update controllerContext (liveBrokers, allTopics, partitionReplicaAssignment, partitionLeadershipInfo, shuttingDownBrokerIds)
+     * fluency03: update the leader and isr cache for all existing partitions from Zookeeper
+     * fluency03: start the channel manager
+     * fluency03: initializePartitionReassignment
+     */
     initializeControllerContext()
     val (topicsToBeDeleted, topicsIneligibleForDeletion) = fetchTopicDeletionsInProgress()
     topicDeletionManager.init(topicsToBeDeleted, topicsIneligibleForDeletion)
@@ -1576,8 +1586,11 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
     def state = ControllerState.ControllerChange
 
     override def process(): Unit = {
+      // fluency03: register the callback for zk connection, to handle the SessionExpiration;
       registerSessionExpirationListener()
+      // fluency03: register the callback to handle controller change
       registerControllerChangeListener()
+      // fluency03: elect the controller from one of the broker
       elect()
     }
 
@@ -1683,6 +1696,7 @@ class KafkaController(val config: KafkaConfig, zkUtils: ZkUtils, time: Time, met
       zkCheckedEphemeral.create()
       info(config.brokerId + " successfully elected as the controller")
       activeControllerId = config.brokerId
+      // fluency03: this callback is invoked by the zookeeper leader elector on electing the current broker as the new controller
       onControllerFailover()
     } catch {
       case _: ZkNodeExistsException =>
