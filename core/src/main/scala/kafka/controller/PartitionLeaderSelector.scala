@@ -52,14 +52,20 @@ class OfflinePartitionLeaderSelector(controllerContext: ControllerContext, confi
   logIdent = "[OfflinePartitionLeaderSelector]: "
 
   def selectLeader(topicAndPartition: TopicAndPartition, currentLeaderAndIsr: LeaderAndIsr): (LeaderAndIsr, Seq[Int]) = {
+    // fluency03: get assigned replicas based on the topicAndPartition
     controllerContext.partitionReplicaAssignment.get(topicAndPartition) match {
       case Some(assignedReplicas) =>
+        // fluency03: get live (online) assigned replicas
         val liveAssignedReplicas = assignedReplicas.filter(r => controllerContext.isReplicaOnline(r, topicAndPartition))
+        // fluency03: get live (online) brokers in ISR
         val liveBrokersInIsr = currentLeaderAndIsr.isr.filter(r => controllerContext.isReplicaOnline(r, topicAndPartition))
         val newLeaderAndIsr =
+          // fluency03: no live (online) brokers in ISR
           if (liveBrokersInIsr.isEmpty) {
             // Prior to electing an unclean (i.e. non-ISR) leader, ensure that doing so is not disallowed by the configuration
             // for unclean leader election.
+            // fluency03: no live (online) brokers in ISR, we have to choose leader from the non-ISR replicas
+            // fluency03: if UncleanLeaderElection is not enabled, throw an NoReplicaOnlineException
             if (!LogConfig.fromProps(config.originals, AdminUtils.fetchEntityConfig(controllerContext.zkUtils,
               ConfigType.Topic, topicAndPartition.topic)).uncleanLeaderElectionEnable) {
               throw new NoReplicaOnlineException(
@@ -70,25 +76,34 @@ class OfflinePartitionLeaderSelector(controllerContext: ControllerContext, confi
             debug(s"No broker in ISR is alive for $topicAndPartition. Pick the leader from the alive assigned " +
               s"replicas: ${liveAssignedReplicas.mkString(",")}")
 
+            // fluency03: UncleanLeaderElection is enabled
+            // fluency03: if there is no non-ISR live replicas, throw an NoReplicaOnlineException
             if (liveAssignedReplicas.isEmpty) {
               throw new NoReplicaOnlineException(s"No replica for partition $topicAndPartition is alive. Live " +
                 s"brokers are: [${controllerContext.liveBrokerIds}]. Assigned replicas are: [$assignedReplicas].")
             } else {
               controllerContext.stats.uncleanLeaderElectionRate.mark()
+              // fluency03: get the first live replica
               val newLeader = liveAssignedReplicas.head
               warn(s"No broker in ISR is alive for $topicAndPartition. Elect leader $newLeader from live " +
                 s"brokers ${liveAssignedReplicas.mkString(",")}. There's potential data loss.")
+              // fluency03: set the first replica as the leaders
               currentLeaderAndIsr.newLeaderAndIsr(newLeader, List(newLeader))
             }
+          // fluency03: there are existing live (online) brokers in ISR
           } else {
+            // fluency03: get live replicas in ISR
             val liveReplicasInIsr = liveAssignedReplicas.filter(r => liveBrokersInIsr.contains(r))
+            // fluency03: obtain the first replica
             val newLeader = liveReplicasInIsr.head
             debug(s"Some broker in ISR is alive for $topicAndPartition. Select $newLeader from ISR " +
               s"${liveBrokersInIsr.mkString(",")} to be the leader.")
+            // fluency03: set the first replica as the leader
             currentLeaderAndIsr.newLeaderAndIsr(newLeader, liveBrokersInIsr)
           }
         info(s"Selected new leader and ISR $newLeaderAndIsr for offline partition $topicAndPartition")
         (newLeaderAndIsr, liveAssignedReplicas)
+      // fluency03: no replicas found for given topicAndPartition
       case None =>
         throw new NoReplicaOnlineException(s"Partition $topicAndPartition doesn't have replicas assigned to it")
     }
@@ -96,10 +111,11 @@ class OfflinePartitionLeaderSelector(controllerContext: ControllerContext, confi
 }
 
 /**
- * New leader = a live in-sync reassigned replica
- * New isr = current isr
- * Replicas to receive LeaderAndIsr request = reassigned replicas
+ * fluency03: New leader = a live in-sync reassigned replica
+ * fluency03: New isr = current isr
+ * fluency03: Replicas to receive LeaderAndIsr request = reassigned replicas
  */
+// fluency03: leader selection after partition reassignment
 class ReassignedPartitionLeaderSelector(controllerContext: ControllerContext) extends PartitionLeaderSelector with Logging {
 
   logIdent = "[ReassignedPartitionLeaderSelector]: "
@@ -109,12 +125,16 @@ class ReassignedPartitionLeaderSelector(controllerContext: ControllerContext) ex
    */
   def selectLeader(topicAndPartition: TopicAndPartition,
                    currentLeaderAndIsr: LeaderAndIsr): (LeaderAndIsr, Seq[Int]) = {
+    // fluency03: get the new replicas from reassigned partition based on specified stopicAndPartition
     val reassignedInSyncReplicas = controllerContext.partitionsBeingReassigned(topicAndPartition).newReplicas
+    // fluency03: find one replica (Option), which is live (online) and part of ISR
     val newLeaderOpt = reassignedInSyncReplicas.find { r =>
       controllerContext.isReplicaOnline(r, topicAndPartition) && currentLeaderAndIsr.isr.contains(r)
     }
     newLeaderOpt match {
+      // fluency03: set the new leader and reassigned ISR replicas
       case Some(newLeader) => (currentLeaderAndIsr.newLeader(newLeader), reassignedInSyncReplicas)
+      // fluency03: no required new leader found, throw an NoReplicaOnlineException
       case None =>
         val errorMessage = if (reassignedInSyncReplicas.isEmpty) {
           s"List of reassigned replicas for partition $topicAndPartition is empty. Current leader and ISR: " +
@@ -129,10 +149,11 @@ class ReassignedPartitionLeaderSelector(controllerContext: ControllerContext) ex
 }
 
 /**
- * New leader = preferred (first assigned) replica (if in isr and alive);
- * New isr = current isr;
- * Replicas to receive LeaderAndIsr request = assigned replicas
+ * fluency03: New leader = preferred (first assigned) replica (if in isr and alive);
+ * fluency03: New isr = current isr;
+ * fluency03: Replicas to receive LeaderAndIsr request = assigned replicas
  */
+// fluency03: set the leader as the first assigned replica
 class PreferredReplicaPartitionLeaderSelector(controllerContext: ControllerContext) extends PartitionLeaderSelector with Logging {
 
   logIdent = "[PreferredReplicaPartitionLeaderSelector]: "
@@ -162,10 +183,11 @@ class PreferredReplicaPartitionLeaderSelector(controllerContext: ControllerConte
 }
 
 /**
- * New leader = replica in isr that's not being shutdown;
- * New isr = current isr - shutdown replica;
- * Replicas to receive LeaderAndIsr request = live assigned replicas
+ * fluency03: New leader = replica in isr that's not being shutdown;
+ * fluency03: New isr = current isr - shutdown replica;
+ * fluency03: Replicas to receive LeaderAndIsr request = live assigned replicas
  */
+// fluency03: leader election during ControlledShutdown
 class ControlledShutdownLeaderSelector(controllerContext: ControllerContext) extends PartitionLeaderSelector with Logging {
 
   logIdent = "[ControlledShutdownLeaderSelector]: "
@@ -176,6 +198,7 @@ class ControlledShutdownLeaderSelector(controllerContext: ControllerContext) ext
     val assignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
     val liveAssignedReplicas = assignedReplicas.filter(r => controllerContext.isReplicaOnline(r, topicAndPartition, true))
 
+    // fluency03: get new ISR replicas from current ISR, by removing the shutting down replica
     val newIsr = currentIsr.filter(brokerId => !controllerContext.shuttingDownBrokerIds.contains(brokerId))
     liveAssignedReplicas.find(newIsr.contains) match {
       case Some(newLeader) =>
@@ -190,8 +213,8 @@ class ControlledShutdownLeaderSelector(controllerContext: ControllerContext) ext
 }
 
 /**
- * Essentially does nothing. Returns the current leader and ISR, and the current
- * set of replicas assigned to a given topic/partition.
+ * fluency03: Essentially does nothing. Returns the current leader and ISR, and the current
+ * fluency03: set of replicas assigned to a given topic/partition.
  */
 class NoOpLeaderSelector(controllerContext: ControllerContext) extends PartitionLeaderSelector with Logging {
 
